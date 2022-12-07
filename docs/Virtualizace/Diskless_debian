@@ -1,0 +1,238 @@
+Diskless Debian Bullseye
+
+1. Create LUN and ISCSI in your NAS
+	ISCSI_TARGET iqn.2000-01.com.synology:DCUKNAS.PVE.pveX
+	ISCSI_TARGET_IP 192.168.10.9
+	
+2. Setup helper debian machine (used for installing debian bullseye on iscsitarget)
+
+Setup locales to "en_US.UTF-8" (To get rid of the warning of many applications)
+
+user@helper:~$ export LANGUAGE=en_US.UTF-8
+user@helper:~$ export LANG=en_US.UTF-8
+user@helper:~$ export LC_ALL=en_US.UTF-8
+user@helper:~$ sudo locale-gen en_US.UTF-8
+user@helper:~$ sudo dpkg-reconfigure locales (Check en_US.UTF-8 and enter)
+
+3. Now lets install open-iscsi and setup new debian iscsi machine
+
+install open-iscsi
+
+user@helper:~$ sudo apt-get install open-iscsi
+
+connect to created iscsi target
+
+first you need to "discover" all aviable iscsi targets
+
+user@helper:~$ sudo iscsiadm -m discovery -t sendtargets -p 192.168.10.9
+192.168.10.9:3260,1 iqn.2000-01.com.synology:DCUKNAS.PVE.pve1
+192.168.10.9:3260,1 iqn.2000-01.com.synology:DCUKNAS.PVE.pve2
+
+then connect to desired LUN with ISCSI
+
+user@helper:~$ sudo iscsiadm -m node -T iqn.2000-01.com.synology:DCUKNAS.PVE.pve2 -p 192.168.10.9 -l
+Logging in to [iface: default, target: iqn.2000-01.com.synology:DCUKNAS.PVE.pve2, portal: 192.168.10.9,3260]
+Login to [iface: default, target: iqn.2000-01.com.synology:DCUKNAS.PVE.pve2, portal: 192.168.10.9,3260] successful.
+
+Next you need to create partitions for new linux installation. 
+
+There are 3 partitions needed:
+	1. partition = Size: 5 MiB, File System: unalocated (will be grub2core.img), Flags: bios_grub
+	2. partition = Size: 512 MiB, File System: linux-swap, Flags: swap
+	3. partition = Size: 20 GiB, File system: ext4
+
+You can use gparted.
+	1. Create partition table (msdos is enough)
+	
+	2. Create partitions (boot, linux-swap, ext4)
+	
+After gparted is done, check partitions properties with gdisk -l /dev/sdX
+
+user@helper:~$ sudo gdisk -l /dev/sda
+
+	Number  Start (sector)    End (sector)  Size       Code  Name
+   	1            2048           12287   5.0 MiB     8300  Linux filesystem
+   	2           12288         1060863   512.0 MiB   8200  Linux swap
+   	3         1060864       209715199   99.5 GiB    8300  Linux filesystem
+
+
+Make sure that starting sector is 2048, otherwise you will not be able to install grub in iSCSI!
+
+user@helper:~$ sudo mkdir /mnt/chroot
+
+user@helper:~$ sudo mount /dev/sda3 /mnt/chroot
+
+Install debootstrap to install a light debian install using deb packages in the target.
+
+user@helper:~$ sudo apt-get install debootstrap
+
+Install debian bullseye with debootstrap
+
+user@helper:~$ sudo debootstrap bullseye /mnt/chroot
+
+	I: Target architecture can be executed
+	I: Retrieving InRelease 
+	I: Checking Release signature
+	I: Valid Release signature (key id A4285295FC7B1A81600062A9605C66F00D6C9793)
+	I: Retrieving Packages 
+	I: Validating Packages 
+	...
+	I: Configuring tasksel-data...
+	I: Configuring tasksel...
+	I: Configuring libc-bin...
+	I: Base system installed successfully.
+
+Now mount proc, sys, dev to be able to chroot.
+
+user@helper:~$ sudo mount -t proc none /mnt/chroot/proc
+user@helper:~$ sudo mount -t sysfs none /mnt/chroot/sys
+user@helper:~$ sudo mount --bind /dev /mnt/chroot/dev
+user@helper:~$ sudo chroot /mnt/chroot /bin/bash
+root@helper:/# 
+
+Now that you re chrooted, create /etc/mtab, which is needed by many programs.
+
+root@helper:/# cp /proc/mounts /etc/mtab
+
+
+root@helper:/# cat /etc/mtab
+	/dev/sda3 / ext4 rw,relatime 0 0
+	none /proc proc rw,relatime 0 0
+	none /sys sysfs rw,relatime 0 0
+	udev /dev devtmpfs rw,nosuid,relatime,size=1971300k,nr_inodes=492825,mode=755 0 0
+
+root@helper:/# sed -i '\|^/dev/sdX|,$!d' /etc/mtab
+
+This command is needed to clear mtab of all unused entries.
+e
+Next step is to identify UUID of ext4 and swap partitions for fstab.
+
+root@helper:/# blkid /dev/sda2 /dev/sda3
+	/dev/sda2: UUID="7f5f0773-a51c-4d7a-b9fd-219b1acff864" TYPE="swap" PARTUUID="ddf6691a-02"
+	/dev/sda3: UUID="d3463fdd-2efb-4162-8ecd-84900a9124eb" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="ddf6691a-03"
+
+Now echo those into /etc/fstab
+
+root@helper:/# echo 'UUID=d3463fdd-2efb-4162-8ecd-84900a9124eb / ext4 errors=remount-ro 0 1' >> /etc/fstab
+root@helper:/# echo 'UUID=7f5f0773-a51c-4d7a-b9fd-219b1acff864 none swap sw 0 0' >> /etc/fstab
+root@helper:/# cat /etc/fstab 
+	# UNCONFIGURED FSTAB FOR BASE SYSTEM
+	UUID=d3463fdd-2efb-4162-8ecd-84900a9124eb / ext4 errors=remount-ro 0 1
+	UUID=7f5f0773-a51c-4d7a-b9fd-219b1acff864 none swap sw 0 0
+
+Now install vim, less, openssh-server and locales
+
+Set locales if needed, same as before.
+
+After that, install kernel (linux-image-amd64), bootloader (grub2), initramfs utilities (initramfs-tools) ...
+
+root@helper:/# apt install linux-image-amd64 grub2 initramfs-tools
+
+Normal grub as a command "grub" is used normally. But sadly it doesn t work for ext4. Grub2 does. 
+
+If not propmted to select grub partition, which you should select the entire sdX disk, use command "grub-install /dev/sdX"
+
+root@helper:/# grub-install /dev/sda
+Installing for i386-pc platform.
+Installation finished. No error reported.
+
+And lastly, we need to update grub for iscsi informations and root disk.
+
+Install open-iscsi	
+
+root@helper:/# apt-get install open-iscsi
+
+Use nano command on /etc/iscsi/initiatorname.iscsi
+
+root@helper:/# nano /etc/iscsi/initiatorname.iscsi
+
+You need to change InitiatorName to something unique. For example: iqn.1993-08.org.dcuk.initiator-pveX
+
+Now you need to go to /etc/default/grub and change it.
+
+Best to use nano command.
+
+root@helper:/# nano /etc/default/grub
+
+Clear "quiet" from GRUB_CMDLINE_LINUX_DEFAULT="quiet" to GRUB_CMDLINE_LINUX_DEFAULT=""
+
+Change GRUB_CMDLINE_LINUX=""
+
+You need to add: iscsi_initiator=iqn.1993-08.org.dcuk.initiator-pve2 iscsi_target_name=iqn.2000-01.com.synology:DCUKNAS.PVE.pve2 iscsi_target_ip=192.168.10.9 root=UUID=d3463fdd-2efb-4162-8ecd-84900a9124eb ip=dhcp
+
+It will look something like:
+
+GRUB_CMDLINE_LINUX="iscsi_initiator=iqn.1993-08.org.dcuk.initiator-pve2 iscsi_target_name=iqn.2000-01.com.synology:DCUKNAS.PVE.pve2 iscsi_target_ip=192.168.10.9 root=UUID=d3463fdd-2efb-4162-8ecd-84900a9124eb ip=dhcp"
+
+Save grub and now, lets proceed to create iscsi.initramfs for initramfs-utils.
+
+root@helper:/# touch /etc/iscsi/iscsi.initramfs
+root@helper:/# nano /etc/iscsi/iscsi.initramfs
+
+Use nano and add iscsi configuration:
+
+ISCSI_INITIATOR=iqn.1993-08.org.dcuk.initiator-pve2
+ISCSI_TARGET_NAME=iqn.2000-01.com.synology:DCUKNAS.PVE.pve2
+ISCSI_TARGET_IP=192.168.10.9
+
+Create new password with passwd
+
+root@helper:/# passwd
+	New password: 
+	Retype new password: 
+	passwd: password updated successfully
+
+And lastly, for safety reasons lets update /etc/network/interfaces
+
+We need to prevent debian initscripts to try to configure eth0 at boot. So add:
+
+	#/etc/network/interfaces
+	auto eth0
+    		iface eth0 inet manual
+	# other interfaces here ...
+
+into the /etc/network/interfaces
+
+Now, remove os-prober.
+root@helper:/# apt remove os-prober
+
+And lastly, use "update-grub" and "update-initramfs -u"
+
+root@helper:/# update-grub
+	Generating grub configuration file ...
+	Found linux image: /boot/vmlinuz-5.10.0-18-amd64
+	Found initrd image: /boot/initrd.img-5.10.0-18-amd64
+	done
+
+root@helper:/# update-initramfs -u
+	update-initramfs: Generating /boot/initrd.img-5.10.0-18-amd64
+
+Now exit chroot, unmount and disconect from iscsi.
+root@helper:/# exit
+	exit
+user@helper:~$ sudo umount /mnt/chroot/{dev,proc,sys,}
+user@helper:~$ sudo iscsiadm -m node -u
+	Logging out of session [sid: 1, target: iqn.2000-01.com.synology:DCUKNAS.PVE.pve2, portal: 192.168.10.9,3260]
+	Logout of [sid: 1, target: iqn.2000-01.com.synology:DCUKNAS.PVE.pve2, portal: 192.168.10.9,3260] successful.
+
+4. Configure ipxe configuration script.
+
+Within your NAS, there should be pxeboot (where type of boot is configured) > config (where configurations for specific machines are)
+
+
+
+Create "boot-MAC-address" of machine, that will be used to boot. For example: boot-0c-c4-7a-51-ee-3c.ipxie
+
+Script looks like:
+
+#!ipxe
+set initiator-iqn iqn.1993-08.org.dcuk.initiator-pve2
+sanboot iscsi:192.168.10.9:::1:iqn.2000-01.com.synology:DCUKNAS.PVE.pve2
+
+With this, your new diskless debian machine should boot.
+
+
+
+
+
+
