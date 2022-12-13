@@ -96,8 +96,16 @@ With hibernation = Only if you plan to hibernate your server
 ```
 :::tip
 You can use `gparted`.
+
+Our helper is VM - If you want use `gparted` you will need enable display trough ssh
+```bash title="Connect to helper with ssh"
+ssh helper@127.0.0.1 -vX
+```
+```bash title="user@helper:~$ "
+sudo xauth add $(xauth -f ~bucekr/.Xauthority list|tail -1)
+```
 :::
-1. Create partition table (msdos is enough)	
+1. Create partition table (gpt is enough)	
 2. Create partitions (boot, linux-swap, ext4)
 
 
