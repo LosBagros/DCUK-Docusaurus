@@ -1,0 +1,136 @@
+# How To Install Proxmox on Debian (Bullseye)
+
+
+1. Update Debian
+
+```bash title="user@helper:~$ "
+sudo apt -y update && sudo apt -y upgrade
+```
+
+2. Install Proxmox
+
+Set up hostname
+
+```bash title="user@helper:~$ "
+sudo hostnamectl set-hostname [insert hostname] --static
+```
+
+:::caution You need to replace the hostname with your own hostname.
+In our case we are using hostname **proxmoxprum1**
+```bash title="user@helper:~$ "
+sudo hostnamectl set-hostname proxmoxprum1 --static
+```
+:::
+
+Update the record on /etc/hosts file with hostname and matching IP address for local resolution without DNS server.
+
+```bash title="user@helper:~$ "
+sudo nano /etc/hosts
+```
+
+```bash title="Nano editor (add this line)"
+[your ip] [hostname.domainname] [hostname] 
+```
+:::caution You need to replace ip address with your own ip address. And hostname with your own hostname.
+
+Our example:
+
+```bash title="Nano editor (add this line)"
+192.168.200.50 proxmoxprum1.dcuk.cz proxmoxprum1
+```
+:::
+
+Logout and back in to use new hostname
+
+```bash title="user@helper:~$ "
+logout
+```
+
+```bash title="user@proxmoxprum1:~$ "
+hostname --ip-address
+```
+    
+```bash title="Output should be your machine ip address:"
+[your ip]
+```
+
+:::caution Our example:
+```bash title="Output should be your machine ip address:"
+192.168.200.50
+```
+:::
+
+Step 3: Add the Proxmox VE repository
+
+The Proxmox server packages are distributed in an APT repository. Add the repository to your Debian 11 system by running the commands below:
+
+```bash title="user@proxmoxprum1:~$ "
+echo "deb http://download.proxmox.com/debian/ceph-pacific bullseye main" | sudo tee /etc/apt/sources.list.d/ceph.list
+```
+
+Then import GPG packages signing key:
+
+```bash title="user@proxmoxprum1:~$ "
+wget http://download.proxmox.com/debian/proxmox-release-bullseye.gpg
+sudo mv proxmox-release-bullseye.gpg /etc/apt/trusted.gpg.d/proxmox-release-bullseye.gpg
+chmod +r /etc/apt/trusted.gpg.d/proxmox-release-bullseye.gpg
+```
+
+Update your APT sources list
+
+```bash title="user@proxmoxprum1:~$ "
+sudo apt update
+```
+
+:::caution If you get an error about wrong time, run the following command to sync time with NTP server.
+
+```bash title="user@proxmoxprum1:~$ "
+sudo apt install ntp
+```
+
+then run the following command to sync time with NTP server.
+
+```bash title="user@proxmoxprum1:~$ "
+timedatectl
+```
+you should see your local time
+    
+```bash title="Output should be your local time:"
+Local time: Fri 2021-08-20 11:05:00 CEST
+Universal time: Fri 2021-08-20 09:05:00 UTC
+RTC time: Fri 2021-08-20 09:05:00
+Time zone: Europe/Prague (CEST, +0200)
+```
+:::
+
+```
+sudo apt full-upgrade
+```
+
+
+Adding Proxmox VE Ceph Repository:
+
+```bash title="user@proxmoxprum1:~$ "
+echo "deb http://download.proxmox.com/debian/ceph-pacific bullseye main" | sudo tee /etc/apt/sources.list.d/ceph.list
+```
+
+Step 4: Install Proxmox VE 7 packages:
+
+```bash title="user@proxmoxprum1:~$ "
+sudo apt update
+sudo apt install proxmox-ve postfix open-iscsi
+```
+
+Confirm system mail name / update accordingly.
+
+Lastly reboot the system.
+
+```bash title="user@proxmoxprum1:~$ "
+sudo reboot
+```
+
+Step 5: Access Proxmox VE 7 web interface
+
+Open your browser and navigate to the Proxmox VE 7 web interface using the following URL:
+
+`https://[your ip address]:8006`
