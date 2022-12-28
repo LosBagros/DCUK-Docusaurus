@@ -65,7 +65,7 @@ Step 3: Add the Proxmox VE repository
 The Proxmox server packages are distributed in an APT repository. Add the repository to your Debian 11 system by running the commands below:
 
 ```bash title="user@proxmoxprum1:~$ "
-echo "deb http://download.proxmox.com/debian/ceph-pacific bullseye main" | sudo tee /etc/apt/sources.list.d/ceph.list
+echo "deb http://download.proxmox.com/debian/pve bullseye pve-no-subscription" | sudo tee /etc/apt/sources.list.d/pve-install-repo.list
 ```
 
 Then import GPG packages signing key:
